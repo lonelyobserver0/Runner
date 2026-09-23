@@ -7,6 +7,7 @@ as its backend: runner is only the UI, elephant does the searching and launching
 
 - `elephant` running (`elephant service enable` to run it as a user service)
 - `gtk4`, `gtk4-layer-shell`
+- `grim` ≥ 1.5, only for window previews
 - a compositor with `wlr-layer-shell` (Hyprland, Sway, niri, …)
 
 ## Build
@@ -87,6 +88,17 @@ Runner takes its look from the desktop instead of having one of its own:
   bluetooth provider sends `remove` first. Runner orders them itself: the config's
   `primary_actions` first, then the rest, with destructive ones (`remove`,
   `erase_history`, `delete`…) last and duplicates dropped.
+- **Window previews:** with the `windows` provider, the selected window is shown
+  in a panel next to the list, windows on other workspaces included. elephant
+  only knows titles, so runner reads the windows' `ext-foreign-toplevel-list`
+  identifiers itself and captures them with `grim -T` (grim ≥ 1.5 and a compositor
+  with `ext-image-copy-capture`, such as Hyprland). Captures run in the background
+  and are cached while the launcher is open. Turn them off with
+  `window_previews = false`.
+- **Window icons:** the `windows` provider looks icons up by `.desktop` file name
+  and falls back to a generic one when the window's app_id doesn't match it
+  (KeePassXC, qBittorrent, VSCodium…). Runner then tries the app_id itself as an
+  icon name, as is and lowercased.
 - **Protocol:** runner talks to elephant's socket
   (`$XDG_RUNTIME_DIR/elephant/elephant.sock`) directly, in JSON, so no protobuf is
   needed. Request frame `[type u8][format u8][len u32 BE][payload]`, response frame

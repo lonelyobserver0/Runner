@@ -83,6 +83,8 @@ pub fn action_label(action: &str) -> String {
         "menus:open" => "Open",
         "menus:parent" => "Back to parent menu",
         "menus:default" => "Run",
+        "focus" => "Switch to",
+        "focus_workspace" => "Go to workspace",
         "run" => "Run",
         "runterminal" => "Run in terminal",
         _ => "",

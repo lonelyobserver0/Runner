@@ -14,10 +14,14 @@ provider_prefix = "/"
 
 # Azioni da preferire per Invio, in ordine di priorità. Le distruttive
 # (remove, erase_history, delete…) finiscono comunque in fondo.
-primary_actions = ["start", "run", "connect", "disconnect", "pair", "menus:open", "menus:default", "activate", "open", "copy"]
+primary_actions = ["start", "run", "focus", "focus_workspace", "connect", "disconnect", "pair", "menus:open", "menus:default", "activate", "open", "copy"]
 
 # Provider dopo le cui azioni il launcher resta aperto e ricarica.
 keep_open = ["bluetooth", "wireplumber", "playerctl", "todo"]
+
+# Anteprima della finestra selezionata con il provider windows.
+# Richiede grim ≥ 1.5 e un compositor con ext-image-copy-capture (Hyprland ok).
+window_previews = true
 
 # Prefisso → provider. Il prefisso viene tolto dalla query.
 # Vince il prefisso più lungo. Servono i relativi provider installati

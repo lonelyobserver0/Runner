@@ -142,3 +142,19 @@ window.runner > .runner-frame {
   border-radius: 0;
   background: @runner_line;
 }
+
+/* Anteprima della finestra selezionata. */
+.runner-preview {
+  border-left: 1px solid @runner_line;
+  padding: 14px 16px;
+}
+
+.preview-picture {
+  background: @runner_surface;
+}
+
+.preview-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: @runner_muted;
+}

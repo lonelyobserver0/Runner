@@ -24,6 +24,8 @@ pub struct Config {
     pub primary_actions: Vec<String>,
     /// Provider "interattivi": dopo un'azione il launcher resta aperto e ricarica.
     pub keep_open: Vec<String>,
+    /// Anteprima della finestra selezionata (provider windows).
+    pub window_previews: bool,
 }
 
 impl Default for Config {
@@ -40,6 +42,8 @@ impl Default for Config {
             primary_actions: [
                 "start",
                 "run",
+                "focus",
+                "focus_workspace",
                 "connect",
                 "disconnect",
                 "pair",
@@ -51,6 +55,7 @@ impl Default for Config {
             ]
             .map(String::from)
             .to_vec(),
+            window_previews: true,
             keep_open: ["bluetooth", "wireplumber", "playerctl", "todo"]
                 .map(String::from)
                 .to_vec(),

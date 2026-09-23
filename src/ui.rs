@@ -1,15 +1,21 @@
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 
+use crate::capture::{self, Toplevel};
 use crate::config::Config;
 use crate::elephant::{self, Event, Item, Kind, QueryClient};
 use crate::providers::{self, Mode};
 
 const DEFAULT_CSS: &str = include_str!("style.css");
+/// Larghezza del pannello anteprima delle finestre.
+const PREVIEW_WIDTH: i32 = 360;
+/// Altezza massima dell'immagine nel pannello.
+const PREVIEW_MAX_HEIGHT: i32 = 220;
 
 pub struct Options {
     /// Provider forzati da riga di comando (sostituiscono quelli del config).
@@ -55,7 +61,18 @@ struct State {
     user_moved: bool,
     query_busy: bool,
     activations_busy: u32,
+    /// Finestre con identificativo Wayland, lette al primo bisogno.
+    toplevels: Option<Vec<Toplevel>>,
+    toplevels_loading: bool,
+    /// Anteprime già catturate (per identificativo) e catture in corso.
+    previews: HashMap<String, gdk::Texture>,
+    capturing: HashSet<String>,
 }
+
+/// Quante finestre catturare in anticipo, oltre a quella selezionata.
+const PREFETCH_PREVIEWS: usize = 12;
+/// Riduzione della cattura: da 1920 px si arriva a ~480, abbastanza per il pannello.
+const PREVIEW_SCALE: f64 = 0.25;
 
 struct Widgets {
     window: gtk::ApplicationWindow,
@@ -65,6 +82,9 @@ struct Widgets {
     list: gtk::ListBox,
     scroll: gtk::ScrolledWindow,
     footer: gtk::Label,
+    preview: gtk::Box,
+    preview_picture: gtk::Picture,
+    preview_label: gtk::Label,
 }
 
 struct Inner {
@@ -154,12 +174,44 @@ pub fn build(app: &gtk::Application, opts: &Options) {
         .css_classes(["runner-footer"])
         .build();
 
+    // Anteprima della finestra selezionata, a destra della lista.
+    // Area fissa: GTK allarga una finestra già mostrata solo in base alla
+    // dimensione minima, e così il launcher non salta da una finestra all'altra.
+    let preview_picture = gtk::Picture::builder()
+        .content_fit(gtk::ContentFit::Contain)
+        .can_shrink(true)
+        .width_request(PREVIEW_WIDTH - 32)
+        .height_request(PREVIEW_MAX_HEIGHT)
+        .css_classes(["preview-picture"])
+        .build();
+    let preview_label = gtk::Label::builder()
+        .wrap(true)
+        .xalign(0.0)
+        .css_classes(["preview-label"])
+        .build();
+    let preview = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(8)
+        .width_request(PREVIEW_WIDTH)
+        .visible(false)
+        .css_classes(["runner-preview"])
+        .build();
+    preview.append(&preview_picture);
+    preview.append(&preview_label);
+
+    // La lista tiene la larghezza del config; l'anteprima si aggiunge accanto.
+    scroll.set_size_request(config.width, -1);
+    scroll.set_hexpand(true);
+    let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    body.append(&scroll);
+    body.append(&preview);
+
     let vbox = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .css_classes(["runner-frame"])
         .build();
     vbox.append(&header);
-    vbox.append(&scroll);
+    vbox.append(&body);
     vbox.append(&footer);
     window.set_child(Some(&vbox));
 
@@ -183,6 +235,10 @@ pub fn build(app: &gtk::Application, opts: &Options) {
             user_moved: false,
             query_busy: false,
             activations_busy: 0,
+            toplevels: None,
+            toplevels_loading: false,
+            previews: HashMap::new(),
+            capturing: HashSet::new(),
         }),
         w: Widgets {
             window: window.clone(),
@@ -192,6 +248,9 @@ pub fn build(app: &gtk::Application, opts: &Options) {
             list: list.clone(),
             scroll,
             footer,
+            preview: preview.clone(),
+            preview_picture,
+            preview_label,
         },
     });
 
@@ -251,7 +310,10 @@ pub fn build(app: &gtk::Application, opts: &Options) {
     list.connect_row_selected(glib::clone!(
         #[weak(rename_to = shared)]
         shared,
-        move |_, _| update_footer(&shared)
+        move |_, _| {
+            update_footer(&shared);
+            update_preview(&shared);
+        }
     ));
 
     let keys = gtk::EventControllerKey::new();
@@ -632,17 +694,19 @@ fn rebuild(shared: &Shared) {
     drop(st);
     select(shared, index);
     update_footer(shared);
+    update_preview(shared);
 }
 
 fn make_row(item: &Item, icon_size: i32, accent: &str) -> gtk::ListBoxRow {
     let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 12);
 
-    let icon = if item.icon.starts_with('/') {
-        gtk::Image::from_file(&item.icon)
-    } else if item.icon.is_empty() {
+    let icon_name = window_icon(item).unwrap_or_else(|| item.icon.clone());
+    let icon = if icon_name.starts_with('/') {
+        gtk::Image::from_file(&icon_name)
+    } else if icon_name.is_empty() {
         gtk::Image::from_icon_name("application-x-executable")
     } else {
-        gtk::Image::from_icon_name(&item.icon)
+        gtk::Image::from_icon_name(&icon_name)
     };
     icon.set_pixel_size(icon_size);
     icon.add_css_class("item-icon");
@@ -674,6 +738,20 @@ fn make_row(item: &Item, icon_size: i32, accent: &str) -> gtk::ListBoxRow {
         .build();
     row.set_tooltip_text(Some(&item.provider));
     row
+}
+
+/// Il provider windows cerca l'icona tra i file `.desktop` e, se l'app_id non
+/// corrisponde al nome del file (KeePassXC, qBittorrent, VSCodium…), ripiega su
+/// un'icona generica. L'app_id (nel subtext) è quasi sempre anche un nome di
+/// icona del tema, così com'è o in minuscolo.
+fn window_icon(item: &Item) -> Option<String> {
+    if item.provider != "windows" || !(item.icon.is_empty() || item.icon == "view-restore") {
+        return None;
+    }
+    let theme = gtk::IconTheme::for_display(&gdk::Display::default()?);
+    [item.subtext.clone(), item.subtext.to_lowercase()]
+        .into_iter()
+        .find(|name| !name.is_empty() && theme.has_icon(name))
 }
 
 /// Label con i caratteri che hanno fatto match nel colore d'accento.
@@ -740,6 +818,134 @@ fn item_actions(st: &State, item: &Item) -> Vec<String> {
         Kind::ProviderAction => item.actions.clone(),
         Kind::Result => providers::order_actions(&item.actions, &st.config.primary_actions),
     }
+}
+
+/// Mostra l'anteprima se la riga selezionata è una finestra.
+fn update_preview(shared: &Shared) {
+    let w = &shared.w;
+    // Come per il footer: durante il rebuild lo stato è in prestito, ci pensa lui.
+    let Ok(mut st) = shared.state.try_borrow_mut() else {
+        return;
+    };
+    let index = w.list.selected_row().map(|r| r.index() as usize);
+    let item = index.and_then(|i| st.rows.get(i));
+    let is_window = item.is_some_and(|it| it.provider == "windows" && it.kind == Kind::Result);
+    if !st.config.window_previews || !is_window {
+        w.preview.set_visible(false);
+        return;
+    }
+    let (index, item) = (index.unwrap(), item.unwrap().clone());
+    w.preview.set_visible(true);
+    w.preview_label.set_text(&item.subtext);
+
+    let Some(toplevels) = &st.toplevels else {
+        w.preview_picture.set_paintable(None::<&gdk::Paintable>);
+        if !st.toplevels_loading {
+            st.toplevels_loading = true;
+            drop(st);
+            load_toplevels(shared);
+        }
+        return;
+    };
+
+    // Quante finestre identiche (titolo e app) precedono questa nella lista.
+    let occurrence = st.rows[..index]
+        .iter()
+        .filter(|it| it.provider == "windows" && it.text == item.text && it.subtext == item.subtext)
+        .count();
+    let Some(id) = capture::match_window(toplevels, &item.text, &item.subtext, occurrence) else {
+        w.preview_picture.set_paintable(None::<&gdk::Paintable>);
+        w.preview_label.set_text("No preview for this window");
+        return;
+    };
+    let id = id.to_owned();
+    match st.previews.get(&id) {
+        Some(texture) => w.preview_picture.set_paintable(Some(texture)),
+        None => {
+            w.preview_picture.set_paintable(None::<&gdk::Paintable>);
+            drop(st);
+            request_capture(shared, id);
+        }
+    }
+}
+
+/// Legge le finestre da Wayland in background, poi cattura in anticipo quelle
+/// in lista così le frecce mostrano subito l'anteprima.
+fn load_toplevels(shared: &Shared) {
+    let weak = Rc::downgrade(shared);
+    glib::spawn_future_local(async move {
+        let result = gio::spawn_blocking(|| capture::list_toplevels().map_err(|e| e.to_string()))
+            .await
+            .unwrap_or_else(|_| Err("thread panicked".into()));
+        let Some(shared) = weak.upgrade() else { return };
+        let toplevels = result.unwrap_or_else(|e| {
+            eprintln!("runner: window list for previews failed: {e}");
+            Vec::new()
+        });
+        let ids: Vec<String> = {
+            let mut st = shared.state.borrow_mut();
+            let ids = st
+                .rows
+                .iter()
+                .filter(|it| it.provider == "windows")
+                .filter_map(|it| capture::match_window(&toplevels, &it.text, &it.subtext, 0))
+                .take(PREFETCH_PREVIEWS)
+                .map(str::to_owned)
+                .collect();
+            st.toplevels = Some(toplevels);
+            ids
+        };
+        update_preview(&shared);
+        for id in ids {
+            request_capture(&shared, id);
+        }
+    });
+}
+
+fn request_capture(shared: &Shared, id: String) {
+    {
+        let mut st = shared.state.borrow_mut();
+        if st.previews.contains_key(&id) || !st.capturing.insert(id.clone()) {
+            return;
+        }
+    }
+    let weak = Rc::downgrade(shared);
+    glib::spawn_future_local(async move {
+        let target = id.clone();
+        let result = gio::spawn_blocking(move || {
+            capture::capture(&target, PREVIEW_SCALE).map_err(|e| e.to_string())
+        })
+        .await
+        .unwrap_or_else(|_| Err("thread panicked".into()));
+        let Some(shared) = weak.upgrade() else { return };
+        // Riduzione a misura del pannello: il Picture prende come altezza naturale
+        // quella dell'immagine, e una finestra alta allungherebbe il launcher.
+        // Qui e non nel thread: Pixbuf non è Send, e su ~480 px bastano pochi ms.
+        let texture = result.and_then(|jpeg| {
+            let stream = gio::MemoryInputStream::from_bytes(&glib::Bytes::from_owned(jpeg));
+            let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_stream_at_scale(
+                &stream,
+                PREVIEW_WIDTH - 32,
+                PREVIEW_MAX_HEIGHT,
+                true,
+                gio::Cancellable::NONE,
+            )
+            .map_err(|e| e.to_string())?;
+            #[allow(deprecated)] // for_pixbuf: l'alternativa è ricodificare in PNG
+            Ok(gdk::Texture::for_pixbuf(&pixbuf))
+        });
+        {
+            let mut st = shared.state.borrow_mut();
+            st.capturing.remove(&id);
+            match texture {
+                Ok(texture) => {
+                    st.previews.insert(id, texture);
+                }
+                Err(e) => eprintln!("runner: window capture failed: {e}"),
+            }
+        }
+        update_preview(&shared);
+    });
 }
 
 fn update_footer(shared: &Shared) {
