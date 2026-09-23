@@ -88,8 +88,8 @@ pub fn build(app: &gtk::Application, opts: &Options) {
         Ok(v) => v,
         Err(e) => {
             eprintln!(
-                "runner: impossibile connettersi a elephant ({}): {e}\n\
-                 avvialo con `elephant` o `elephant service enable`",
+                "runner: cannot connect to elephant ({}): {e}\n\
+                 start it with `elephant` or `elephant service enable`",
                 elephant::socket_path().display()
             );
             app.quit();
@@ -117,7 +117,7 @@ pub fn build(app: &gtk::Application, opts: &Options) {
         .build();
 
     let entry = gtk::Entry::builder()
-        .placeholder_text("Cerca, oppure / per un provider")
+        .placeholder_text("Search, or type / for a provider")
         .hexpand(true)
         .css_classes(["runner-entry"])
         .build();
@@ -235,7 +235,7 @@ pub fn build(app: &gtk::Application, opts: &Options) {
         }
         let provider = row.tooltip_text().unwrap_or_default();
         let header = gtk::Label::builder()
-            .label(format!("Comandi {}", providers::describe(&provider).0))
+            .label(format!("{} commands", providers::describe(&provider).0))
             .xalign(0.0)
             .css_classes(["section-header"])
             .build();
@@ -289,7 +289,7 @@ pub fn build(app: &gtk::Application, opts: &Options) {
 }
 
 fn load_css(theme: &crate::theme::Theme) {
-    let display = gdk::Display::default().expect("nessun display");
+    let display = gdk::Display::default().expect("no display");
 
     // Colori del desktop + stile di default nello stesso provider, così i
     // `@runner_*` si risolvono; lo style.css utente può ridefinirli.
@@ -324,7 +324,7 @@ fn on_providers_discovered(shared: &Shared, installed: Vec<String>) {
     if !st.subscribed_menus && st.installed.iter().any(|p| p.starts_with("menus:")) {
         match st.client.subscribe("menus") {
             Ok(()) => st.subscribed_menus = true,
-            Err(e) => eprintln!("runner: sottoscrizione ai menu fallita: {e}"),
+            Err(e) => eprintln!("runner: menu subscription failed: {e}"),
         }
     }
     drop(st);
@@ -364,7 +364,7 @@ fn refresh(shared: &Shared) {
             .client
             .request_state(provider.as_deref().unwrap_or_default())
         {
-            eprintln!("runner: richiesta stato fallita: {e}");
+            eprintln!("runner: provider state request failed: {e}");
         }
     }
 
@@ -395,13 +395,16 @@ fn refresh(shared: &Shared) {
         Some(p) => {
             let name = providers::describe(p).0;
             let placeholder = if st.active_mode.is_some() {
-                format!("Cerca in {name}, Backspace per uscire")
+                format!("Search {name}, Backspace to leave")
             } else {
-                format!("Cerca in {name}")
+                format!("Search {name}")
             };
             (format!("{} ❯", name.to_lowercase()), placeholder)
         }
-        None => ("❯".to_owned(), "Cerca, oppure / per un provider".to_owned()),
+        None => (
+            "❯".to_owned(),
+            "Search, or type / for a provider".to_owned(),
+        ),
     };
     drop(guard);
     shared.w.mode.set_text(&prompt);
@@ -412,7 +415,7 @@ fn refresh(shared: &Shared) {
 
 fn send_query(st: &mut State, providers: Option<&[String]>, only: Option<String>, query: &str) {
     if let Err(e) = st.client.query(providers, query) {
-        eprintln!("runner: query fallita: {e}");
+        eprintln!("runner: query failed: {e}");
     }
     st.expect = Some(Expect {
         provider: only,
@@ -516,7 +519,7 @@ fn handle_event(shared: &Shared, event: Event) {
             return;
         }
         Event::Disconnected(e) => {
-            eprintln!("runner: connessione con elephant chiusa: {e}");
+            eprintln!("runner: connection to elephant closed: {e}");
             shared.w.window.close();
             return;
         }
@@ -742,7 +745,7 @@ fn update_footer(shared: &Shared) {
         .and_then(|r| st.rows.get(r.index() as usize));
     let key = |k: &str, label: &str| format!("<b>{k}</b>  {}", glib::markup_escape_text(label));
     let hints: Vec<String> = match item {
-        Some(item) if item.kind == Kind::Provider => vec![key("Invio", "Entra nella modalità")],
+        Some(item) if item.kind == Kind::Provider => vec![key("Enter", "Open this mode")],
         Some(item) => item_actions(&st, item)
             .iter()
             .take(9)
@@ -750,7 +753,7 @@ fn update_footer(shared: &Shared) {
             .map(|(i, a)| {
                 let label = providers::action_label(a);
                 if i == 0 {
-                    key("Invio", &label)
+                    key("Enter", &label)
                 } else {
                     key(&format!("Alt+{}", i + 1), &label)
                 }
@@ -862,7 +865,7 @@ fn activate(shared: &Shared, index: usize, action_index: usize) {
                 gio::spawn_blocking(move || elephant::activate(&item, &action, &query, single))
                     .await;
             if let Ok(Err(e)) = result {
-                eprintln!("runner: attivazione fallita: {e}");
+                eprintln!("runner: activation failed: {e}");
             }
             window.close();
             drop(hold);
@@ -878,7 +881,7 @@ fn activate(shared: &Shared, index: usize, action_index: usize) {
         let result =
             gio::spawn_blocking(move || elephant::activate(&item, &action, &query, single)).await;
         if let Ok(Err(e)) = result {
-            eprintln!("runner: attivazione fallita: {e}");
+            eprintln!("runner: activation failed: {e}");
         }
         if let Some(shared) = weak.upgrade() {
             {

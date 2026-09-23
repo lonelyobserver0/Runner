@@ -208,7 +208,7 @@ impl QueryClient {
                                 }
                                 Ok(_) => continue,
                                 Err(e) => {
-                                    eprintln!("runner: risposta non valida: {e}");
+                                    eprintln!("runner: invalid response: {e}");
                                     continue;
                                 }
                             }
@@ -220,7 +220,7 @@ impl QueryClient {
                                     actions: r.actions,
                                 },
                                 Err(e) => {
-                                    eprintln!("runner: stato non valido: {e}");
+                                    eprintln!("runner: invalid provider state: {e}");
                                     continue;
                                 }
                             }
@@ -254,7 +254,7 @@ impl QueryClient {
     /// Chiede le azioni a livello di provider; la risposta arriva come `Event::State`.
     pub fn request_state(&mut self, provider: &str) -> io::Result<()> {
         let payload =
-            serde_json::to_vec(&StateRequest { provider }).expect("serializzazione state");
+            serde_json::to_vec(&StateRequest { provider }).expect("serialize state request");
         send(&mut self.stream, REQ_STATE, &payload)
     }
 
@@ -267,7 +267,7 @@ impl QueryClient {
             provider,
             query: "",
         };
-        let payload = serde_json::to_vec(&req).expect("serializzazione subscribe");
+        let payload = serde_json::to_vec(&req).expect("serialize subscribe request");
         send(&mut stream, REQ_SUBSCRIBE, &payload)?;
 
         let tx = self.events.clone();
@@ -294,7 +294,7 @@ impl QueryClient {
             maxresults: self.max_results,
             exactsearch: false,
         };
-        let payload = serde_json::to_vec(&req).expect("serializzazione query");
+        let payload = serde_json::to_vec(&req).expect("serialize query");
         send(&mut self.stream, REQ_QUERY, &payload)
     }
 }
@@ -313,7 +313,7 @@ pub fn activate(item: &Item, action: &str, query: &str, single: bool) -> io::Res
         arguments: "",
         single,
     };
-    let payload = serde_json::to_vec(&req).expect("serializzazione activate");
+    let payload = serde_json::to_vec(&req).expect("serialize activate request");
     send(&mut stream, REQ_ACTIVATE, &payload)?;
     loop {
         let (kind, _) = recv(&mut stream)?;

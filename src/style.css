@@ -113,7 +113,7 @@ window.runner > .runner-frame {
   font-family: "JetBrains Mono", monospace;
 }
 
-/* Gruppo "Comandi <provider>". */
+/* Gruppo "<provider> commands". */
 .section-header {
   margin: 10px 18px 4px;
   padding-top: 10px;

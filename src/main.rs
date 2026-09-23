@@ -10,19 +10,19 @@ use gtk::{gio, glib};
 const APP_ID: &str = "dev.loneobs.Runner";
 
 const HELP: &str = "\
-runner — launcher Wayland basato su elephant
+runner — a Wayland launcher built on elephant
 
-USO: runner [-p PROVIDER]... [-q QUERY]
+USAGE: runner [-p PROVIDER]... [-q QUERY]
 
-Nella barra: `/` elenca i provider installati, `/bluetooth` entra in quella
-modalità (idem `/menus:<nome>`). Esempio: runner -q /bluetooth
+In the search bar, `/` lists the installed providers and `/bluetooth` enters
+that mode (same for `/menus:<name>`). Example: runner -q /bluetooth
 
-  -p, --provider NOME  interroga solo questo provider (ripetibile)
-  -q, --query TESTO    testo iniziale nella barra di ricerca
-  -h, --help           mostra questo aiuto
+  -p, --provider NAME  search only this provider (repeatable)
+  -q, --query TEXT     initial text in the search bar
+  -h, --help           show this help
 
-Se runner è già aperto, lanciarlo di nuovo lo chiude (comodo da bindare).
-Config: ~/.config/runner/config.toml, stile: ~/.config/runner/style.css";
+Launching runner while it is open closes it, so one keybind is enough.
+Config: ~/.config/runner/config.toml, style: ~/.config/runner/style.css";
 
 fn parse_args() -> Result<ui::Options, String> {
     let mut providers = Vec::new();
@@ -30,13 +30,13 @@ fn parse_args() -> Result<ui::Options, String> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "-p" | "--provider" => providers.push(args.next().ok_or("manca il nome del provider")?),
-            "-q" | "--query" => initial_query = args.next().ok_or("manca il testo della query")?,
+            "-p" | "--provider" => providers.push(args.next().ok_or("missing provider name")?),
+            "-q" | "--query" => initial_query = args.next().ok_or("missing query text")?,
             "-h" | "--help" => {
                 println!("{HELP}");
                 std::process::exit(0);
             }
-            other => return Err(format!("argomento sconosciuto: {other}")),
+            other => return Err(format!("unknown argument: {other}")),
         }
     }
     Ok(ui::Options {
