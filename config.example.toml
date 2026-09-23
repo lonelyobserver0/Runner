@@ -14,7 +14,7 @@ provider_prefix = "/"
 
 # Azioni da preferire per Invio, in ordine di priorità. Le distruttive
 # (remove, erase_history, delete…) finiscono comunque in fondo.
-primary_actions = ["start", "connect", "disconnect", "pair", "menus:open", "menus:default", "activate", "open", "copy"]
+primary_actions = ["start", "run", "connect", "disconnect", "pair", "menus:open", "menus:default", "activate", "open", "copy"]
 
 # Provider dopo le cui azioni il launcher resta aperto e ricarica.
 keep_open = ["bluetooth", "wireplumber", "playerctl", "todo"]

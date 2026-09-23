@@ -430,6 +430,8 @@ fn provider_list(installed: &[String], filter: &str) -> Vec<Item> {
     let filter = filter.trim().to_lowercase();
     installed
         .iter()
+        // `providerlist` è un altro elenco di provider: qui sarebbe un doppione.
+        .filter(|p| *p != "providerlist")
         .filter_map(|p| {
             let (pretty, icon) = providers::describe(p);
             let matches = filter.is_empty()
@@ -464,6 +466,13 @@ fn handle_event(shared: &Shared, event: Event) {
             if qid != st.qid {
                 st.qid = qid;
                 st.results.clear();
+            }
+            let mut item = item;
+            // Le voci di `providerlist` sono provider: attivarle in elephant non
+            // fa nulla, runner deve entrare nella modalità.
+            if item.provider == "providerlist" {
+                item.kind = Kind::Provider;
+                item.subtext = format!("/{}", item.identifier);
             }
             st.results.push(item);
         }
@@ -670,7 +679,8 @@ fn make_row(item: &Item, icon_size: i32, accent: &str) -> gtk::ListBoxRow {
 /// Label con i caratteri che hanno fatto match nel colore d'accento.
 fn text_label(item: &Item, field: &str, text: &str, class: &str, accent: &str) -> gtk::Label {
     let positions: &[i32] = match &item.fuzzyinfo {
-        Some(f) if f.field == field => &f.positions,
+        // Alcuni provider (es. runner) lasciano `field` vuoto: vale per `text`.
+        Some(f) if f.field == field || (f.field.is_empty() && field == "text") => &f.positions,
         _ => &[],
     };
     let open = format!("<span foreground=\"{accent}\" weight=\"bold\">");

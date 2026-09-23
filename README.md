@@ -94,3 +94,17 @@ Runner takes its look from the desktop instead of having one of its own:
 - **Renderer:** runner sets `GSK_RENDERER=gl` unless it is already set. With the
   default Vulkan renderer, GTK enumerates every GPU and wakes a suspended discrete
   GPU on hybrid laptops: startup went from ~0.2 s to ~2 s.
+
+## Troubleshooting
+
+**A provider is installed but missing from `/`.** elephant loads providers as Go
+plugins, and a plugin only loads if it was built with the same Go version as
+`elephant` itself. After a Go update, a newly built provider is rejected silently:
+`elephant listproviders` just leaves it out. The error shows up in the log:
+
+```sh
+elephant -d 2>&1 | grep "different version"
+```
+
+Fix it by rebuilding elephant and all its providers together, then restarting
+elephant (e.g. on Arch: `paru -S --rebuild elephant elephant-<provider>…`).

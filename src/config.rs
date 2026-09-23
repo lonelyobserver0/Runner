@@ -39,6 +39,7 @@ impl Default for Config {
             provider_prefix: "/".into(),
             primary_actions: [
                 "start",
+                "run",
                 "connect",
                 "disconnect",
                 "pair",

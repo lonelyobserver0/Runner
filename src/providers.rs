@@ -83,6 +83,8 @@ pub fn action_label(action: &str) -> String {
         "menus:open" => "Open",
         "menus:parent" => "Back to parent menu",
         "menus:default" => "Run",
+        "run" => "Run",
+        "runterminal" => "Run in terminal",
         _ => "",
     };
     if !known.is_empty() {
@@ -244,6 +246,11 @@ mod tests {
         assert_eq!(
             order_actions(&a(&["start", "pin", "erase_history"]), &preferred),
             a(&["start", "pin", "erase_history"])
+        );
+        // Provider runner: Invio esegue, Alt+2 apre nel terminale.
+        assert_eq!(
+            order_actions(&a(&["run", "runterminal", "erase_history"]), &preferred),
+            a(&["run", "runterminal", "erase_history"])
         );
     }
 }
