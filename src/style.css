@@ -1,100 +1,135 @@
-/* Stile di default. Sovrascrivibile da ~/.config/runner/style.css
-   (basta ridefinire i colori qui sotto con @define-color). */
+/* Stile di default di runner.
+ *
+ * I colori base arrivano dal desktop: runner_bg, runner_fg e runner_accent da
+ * pywal (~/.cache/wal/colors.json), il bordo dal bordo attivo di Hyprland.
+ * Tutto il resto è una miscela di quei tre, così segue ogni wallpaper.
+ * Per cambiarli basta ridefinirli in ~/.config/runner/style.css. */
 
-@define-color runner_bg #1e1e2e;
-@define-color runner_fg #cdd6f4;
-@define-color runner_dim #9399b2;
-@define-color runner_entry_bg #313244;
-@define-color runner_border #45475a;
-@define-color runner_accent #89b4fa;
-@define-color runner_selected_bg alpha(#89b4fa, 0.18);
+@define-color runner_surface mix(@runner_bg, @runner_fg, 0.05);
+@define-color runner_hover mix(@runner_bg, @runner_fg, 0.09);
+@define-color runner_line mix(@runner_bg, @runner_fg, 0.16);
+@define-color runner_muted mix(@runner_bg, @runner_fg, 0.55);
 
 window.runner {
   background: transparent;
 }
 
-window.runner > box {
-  background: alpha(@runner_bg, 0.97);
+/* La cornice imita una finestra con il focus: angoli vivi, 1 px di bordo.
+ * Se c'è Hyprland, il CSS generato sostituisce il bordo con il suo gradiente.
+ * Sfondo opaco: sta sopra finestre spesso già trasparenti, e anche pochi
+ * punti di trasparenza lasciano leggere il testo sottostante. */
+window.runner > .runner-frame {
+  background: @runner_bg;
   color: @runner_fg;
-  border: 1px solid @runner_border;
-  border-radius: 14px;
-  padding: 10px;
+  border: 1px solid @runner_accent;
+  border-radius: 0;
+  font-family: "Noto Sans", sans-serif;
 }
 
+/* Intestazione: una riga di comando. */
 .runner-header {
-  margin-bottom: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid @runner_line;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 15px;
 }
 
-/* Chip della modalità corrente (es. "Bluetooth") a sinistra della entry. */
 .runner-mode {
-  background: alpha(@runner_accent, 0.18);
   color: @runner_accent;
-  border-radius: 8px;
-  padding: 0 10px;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.runner-entry,
+.runner-entry:focus,
+.runner-entry:focus-within {
+  background: transparent;
+  color: @runner_fg;
+  caret-color: @runner_accent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+  min-height: 24px;
+  padding: 0;
+}
+
+.runner-entry > text > placeholder {
+  color: @runner_muted;
+}
+
+.runner-entry > text > selection {
+  background: alpha(@runner_accent, 0.35);
+  color: @runner_fg;
 }
 
 .runner-spinner {
   color: @runner_accent;
-  min-width: 18px;
+  min-width: 16px;
+  min-height: 16px;
 }
 
-.runner-entry {
-  background: @runner_entry_bg;
-  color: @runner_fg;
-  caret-color: @runner_accent;
-  font-size: 1.3em;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  box-shadow: none;
-  outline: none;
-}
-
-.runner-entry:focus-within {
-  border-color: @runner_accent;
-}
-
+/* Risultati. */
 .runner-list {
   background: transparent;
   color: @runner_fg;
+  padding: 6px 0;
 }
 
 .runner-list row.item {
-  padding: 6px 10px;
-  border-radius: 8px;
-  border-left: 3px solid transparent;
+  padding: 7px 18px 7px 16px;
+  border-radius: 0;
+  /* Barra d'accento come box-shadow: non sposta il contenuto. */
+  box-shadow: inset 2px 0 transparent;
 }
 
 .runner-list row.item:hover {
-  background: alpha(@runner_fg, 0.05);
+  background: @runner_surface;
 }
 
 .runner-list row.item:selected {
-  background: @runner_selected_bg;
-  border-left-color: @runner_accent;
+  background: @runner_hover;
+  box-shadow: inset 2px 0 @runner_accent;
   color: @runner_fg;
 }
 
-.item-badge {
-  font-size: 0.75em;
-  color: @runner_accent;
-  border: 1px solid alpha(@runner_accent, 0.5);
-  border-radius: 6px;
-  padding: 1px 6px;
+.runner-list row.item:focus-visible {
+  outline: none;
+}
+
+.item-icon {
+  margin-right: 2px;
+}
+
+.item-text {
+  font-size: 14px;
 }
 
 .item-subtext {
-  font-size: 0.85em;
-  color: @runner_dim;
+  font-size: 12px;
+  color: @runner_muted;
 }
 
+.runner-list row.provider .item-subtext {
+  font-family: "JetBrains Mono", monospace;
+}
+
+/* Gruppo "Comandi <provider>". */
+.section-header {
+  margin: 10px 18px 4px;
+  padding-top: 10px;
+  border-top: 1px solid @runner_line;
+  font-size: 12px;
+  font-weight: 600;
+  color: @runner_muted;
+}
+
+/* Barra di stato con i tasti. */
 .runner-footer {
-  font-size: 0.8em;
-  color: @runner_dim;
-  margin-top: 8px;
-  padding: 0 6px;
+  background: @runner_surface;
+  border-top: 1px solid @runner_line;
+  color: @runner_muted;
+  font-size: 12px;
+  padding: 7px 18px;
 }
 
 .runner scrollbar {
@@ -103,6 +138,7 @@ window.runner > box {
 }
 
 .runner scrollbar slider {
-  min-width: 4px;
-  background: alpha(@runner_fg, 0.2);
+  min-width: 3px;
+  border-radius: 0;
+  background: @runner_line;
 }

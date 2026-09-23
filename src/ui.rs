@@ -27,6 +27,9 @@ struct Expect {
 struct State {
     config: Config,
     client: QueryClient,
+    /// Modalità attiva (`/bluetooth`): il prompt la mostra, la entry contiene
+    /// solo la query. Backspace su entry vuota ne esce.
+    active_mode: Option<String>,
     /// Provider installati (arrivano in differita da `elephant listproviders`).
     installed: Vec<String>,
     subscribed_menus: bool,
@@ -45,6 +48,8 @@ struct State {
     mode_query: String,
     providers_override: Option<Vec<String>>,
     rebuild_scheduled: bool,
+    /// Colore d'accento, per i caratteri trovati (markup Pango, non CSS).
+    accent: String,
     /// L'utente ha spostato la selezione: i rebuild la conservano invece di
     /// tornare alla prima riga. Si azzera quando cambia il testo.
     user_moved: bool,
@@ -71,7 +76,8 @@ type Shared = Rc<Inner>;
 
 pub fn build(app: &gtk::Application, opts: &Options) {
     let config = Config::load();
-    load_css();
+    let theme = crate::theme::Theme::load();
+    load_css(&theme);
 
     let (client, events) = match QueryClient::connect(
         opts.providers
@@ -106,12 +112,12 @@ pub fn build(app: &gtk::Application, opts: &Options) {
     window.set_margin(Edge::Top, config.margin_top);
 
     let mode = gtk::Label::builder()
+        .label("❯")
         .css_classes(["runner-mode"])
-        .visible(false)
         .build();
 
     let entry = gtk::Entry::builder()
-        .placeholder_text("Cerca…   / per scegliere un provider")
+        .placeholder_text("Cerca, oppure / per un provider")
         .hexpand(true)
         .css_classes(["runner-entry"])
         .build();
@@ -148,7 +154,10 @@ pub fn build(app: &gtk::Application, opts: &Options) {
         .css_classes(["runner-footer"])
         .build();
 
-    let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let vbox = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .css_classes(["runner-frame"])
+        .build();
     vbox.append(&header);
     vbox.append(&scroll);
     vbox.append(&footer);
@@ -158,6 +167,7 @@ pub fn build(app: &gtk::Application, opts: &Options) {
         state: RefCell::new(State {
             config,
             client,
+            active_mode: None,
             installed: Vec::new(),
             subscribed_menus: false,
             results: Vec::new(),
@@ -169,6 +179,7 @@ pub fn build(app: &gtk::Application, opts: &Options) {
             mode_query: String::new(),
             providers_override: opts.providers.clone(),
             rebuild_scheduled: false,
+            accent: theme.accent.clone(),
             user_moved: false,
             query_busy: false,
             activations_busy: 0,
@@ -212,6 +223,24 @@ pub fn build(app: &gtk::Application, opts: &Options) {
         shared,
         move |_| refresh(&shared)
     ));
+
+    // Le azioni del provider sono un gruppo a sé: intestazione sulla prima.
+    // Guarda solo i widget (classe e tooltip della riga) perché viene chiamata
+    // durante il rebuild, quando lo stato è già in prestito.
+    list.set_header_func(|row, before| {
+        let is_action = |r: &gtk::ListBoxRow| r.has_css_class("provider-action");
+        if !is_action(row) || before.is_some_and(is_action) {
+            row.set_header(None::<&gtk::Widget>);
+            return;
+        }
+        let provider = row.tooltip_text().unwrap_or_default();
+        let header = gtk::Label::builder()
+            .label(format!("Comandi {}", providers::describe(&provider).0))
+            .xalign(0.0)
+            .css_classes(["section-header"])
+            .build();
+        row.set_header(Some(&header));
+    });
 
     list.connect_row_activated(glib::clone!(
         #[weak(rename_to = shared)]
@@ -259,11 +288,17 @@ pub fn build(app: &gtk::Application, opts: &Options) {
     }
 }
 
-fn load_css() {
+fn load_css(theme: &crate::theme::Theme) {
     let display = gdk::Display::default().expect("nessun display");
 
+    // Colori del desktop + stile di default nello stesso provider, così i
+    // `@runner_*` si risolvono; lo style.css utente può ridefinirli.
     let base = gtk::CssProvider::new();
-    base.load_from_string(DEFAULT_CSS);
+    base.load_from_string(&format!(
+        "{}\n{DEFAULT_CSS}\n{}",
+        theme.colors_css(),
+        theme.border_css()
+    ));
     gtk::style_context_add_provider_for_display(
         &display,
         &base,
@@ -302,8 +337,21 @@ fn refresh(shared: &Shared) {
     let text = shared.w.entry.text();
     let mut guard = shared.state.borrow_mut();
     let st = &mut *guard;
-    let mode = providers::parse_mode(&text, &st.config, &st.installed);
+    let mode = providers::parse_mode(&text, st.active_mode.as_deref(), &st.config, &st.installed);
     st.user_moved = false;
+
+    if let Mode::Enter { provider, query } = mode {
+        let query = query.to_owned();
+        drop(guard);
+        // Non si cambia il testo della entry dentro il suo stesso `changed`.
+        let weak = Rc::downgrade(shared);
+        glib::idle_add_local_once(move || {
+            if let Some(shared) = weak.upgrade() {
+                enter_mode(&shared, &provider, &query);
+            }
+        });
+        return;
+    }
 
     let provider = mode.provider().map(str::to_owned);
     if provider.is_none() {
@@ -335,20 +383,29 @@ fn refresh(shared: &Shared) {
             let providers = [provider.clone()];
             send_query(st, Some(&providers), provider.clone().into(), query);
         }
+        Mode::Enter { .. } => unreachable!("gestito sopra"),
         Mode::Default { query } => {
             let providers = st.providers_override.clone();
             send_query(st, providers.as_deref(), None, query);
         }
     }
 
-    let (name, visible) = match &st.state_provider {
-        Some(p) => (providers::describe(p).0, true),
-        None if st.expect.is_none() => ("Provider".to_owned(), true),
-        None => (String::new(), false),
+    // Il prompt dice dove si sta cercando, come in una shell.
+    let (prompt, placeholder) = match &st.state_provider {
+        Some(p) => {
+            let name = providers::describe(p).0;
+            let placeholder = if st.active_mode.is_some() {
+                format!("Cerca in {name}, Backspace per uscire")
+            } else {
+                format!("Cerca in {name}")
+            };
+            (format!("{} ❯", name.to_lowercase()), placeholder)
+        }
+        None => ("❯".to_owned(), "Cerca, oppure / per un provider".to_owned()),
     };
     drop(guard);
-    shared.w.mode.set_text(&name);
-    shared.w.mode.set_visible(visible);
+    shared.w.mode.set_text(&prompt);
+    shared.w.entry.set_placeholder_text(Some(&placeholder));
     update_spinner(shared);
     schedule_rebuild(shared);
 }
@@ -421,13 +478,12 @@ fn handle_event(shared: &Shared, event: Event) {
             if st.state_provider.as_deref() != Some(provider.as_str()) {
                 return;
             }
-            let (pretty, icon) = providers::describe(&provider);
+            let icon = providers::describe(&provider).1;
             st.provider_actions = actions
                 .into_iter()
                 .map(|action| Item {
                     identifier: provider.clone(),
                     text: providers::action_label(&action),
-                    subtext: pretty.clone(),
                     icon: icon.to_owned(),
                     provider: provider.clone(),
                     actions: vec![action],
@@ -439,7 +495,7 @@ fn handle_event(shared: &Shared, event: Event) {
         Event::Subscription(value) => {
             // `menus:<nome>`: elephant chiede di passare a quel (sotto)menu.
             if value.strip_prefix("menus:").is_some_and(|m| !m.is_empty()) {
-                enter_mode(shared, &value);
+                enter_mode(shared, &value, "");
             }
             return;
         }
@@ -468,22 +524,33 @@ fn handle_event(shared: &Shared, event: Event) {
     schedule_rebuild(shared);
 }
 
-/// Scrive `/<provider> ` nella entry: il resto lo fa `refresh`.
-fn enter_mode(shared: &Shared, provider: &str) {
-    let text = {
+/// Entra nella modalità di un provider; nella entry resta solo `query`.
+fn enter_mode(shared: &Shared, provider: &str, query: &str) {
+    {
         let mut st = shared.state.borrow_mut();
         if !st.installed.iter().any(|p| p == provider) {
             st.installed.push(provider.to_owned());
         }
-        let prefix = if st.config.provider_prefix.is_empty() {
-            "/".to_owned()
-        } else {
-            st.config.provider_prefix.clone()
-        };
-        format!("{prefix}{provider} ")
-    };
-    shared.w.entry.set_text(&text);
-    shared.w.entry.set_position(-1);
+        st.active_mode = Some(provider.to_owned());
+    }
+    set_entry_text(shared, query);
+}
+
+fn exit_mode(shared: &Shared) {
+    shared.state.borrow_mut().active_mode = None;
+    set_entry_text(shared, "");
+}
+
+/// Cambia il testo e rilancia la ricerca anche se il testo non cambia
+/// (in quel caso `changed` non scatta, ma la modalità sì).
+fn set_entry_text(shared: &Shared, text: &str) {
+    let entry = &shared.w.entry;
+    if entry.text() == text {
+        refresh(shared);
+    } else {
+        entry.set_text(text);
+    }
+    entry.set_position(-1);
 }
 
 /// Gli item arrivano a raffica: si ricostruisce la lista una volta sola, a raffica finita.
@@ -537,7 +604,8 @@ fn rebuild(shared: &Shared) {
         w.list.remove(&row);
     }
     for item in &rows {
-        w.list.append(&make_row(item, st.config.icon_size));
+        let row = make_row(item, st.config.icon_size, &st.accent);
+        w.list.append(&row);
     }
 
     let index = selected_key
@@ -554,7 +622,7 @@ fn rebuild(shared: &Shared) {
     update_footer(shared);
 }
 
-fn make_row(item: &Item, icon_size: i32) -> gtk::ListBoxRow {
+fn make_row(item: &Item, icon_size: i32, accent: &str) -> gtk::ListBoxRow {
     let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 12);
 
     let icon = if item.icon.starts_with('/') {
@@ -571,9 +639,15 @@ fn make_row(item: &Item, icon_size: i32) -> gtk::ListBoxRow {
     let texts = gtk::Box::new(gtk::Orientation::Vertical, 2);
     texts.set_valign(gtk::Align::Center);
     texts.set_hexpand(true);
-    texts.append(&text_label(item, "text", &item.text, "item-text"));
+    texts.append(&text_label(item, "text", &item.text, "item-text", accent));
     if !item.subtext.is_empty() {
-        texts.append(&text_label(item, "subtext", &item.subtext, "item-subtext"));
+        texts.append(&text_label(
+            item,
+            "subtext",
+            &item.subtext,
+            "item-subtext",
+            accent,
+        ));
     }
     hbox.append(&texts);
 
@@ -582,15 +656,6 @@ fn make_row(item: &Item, icon_size: i32) -> gtk::ListBoxRow {
         Kind::ProviderAction => "provider-action",
         Kind::Provider => "provider",
     };
-    if item.kind == Kind::ProviderAction {
-        let badge = gtk::Label::builder()
-            .label("azione")
-            .valign(gtk::Align::Center)
-            .css_classes(["item-badge"])
-            .build();
-        hbox.append(&badge);
-    }
-
     let row = gtk::ListBoxRow::builder()
         .child(&hbox)
         .css_classes(["item", class])
@@ -599,19 +664,20 @@ fn make_row(item: &Item, icon_size: i32) -> gtk::ListBoxRow {
     row
 }
 
-/// Label con i caratteri che hanno fatto match evidenziati.
-fn text_label(item: &Item, field: &str, text: &str, class: &str) -> gtk::Label {
+/// Label con i caratteri che hanno fatto match nel colore d'accento.
+fn text_label(item: &Item, field: &str, text: &str, class: &str, accent: &str) -> gtk::Label {
     let positions: &[i32] = match &item.fuzzyinfo {
         Some(f) if f.field == field => &f.positions,
         _ => &[],
     };
-    let mut markup = String::with_capacity(text.len() + positions.len() * 7);
+    let open = format!("<span foreground=\"{accent}\" weight=\"bold\">");
+    let mut markup = String::with_capacity(text.len() + positions.len() * (open.len() + 7));
     for (i, ch) in text.chars().enumerate() {
         let escaped = glib::markup_escape_text(ch.encode_utf8(&mut [0; 4]));
         if positions.contains(&(i as i32)) {
-            markup.push_str("<u><b>");
+            markup.push_str(&open);
             markup.push_str(&escaped);
-            markup.push_str("</b></u>");
+            markup.push_str("</span>");
         } else {
             markup.push_str(&escaped);
         }
@@ -674,8 +740,9 @@ fn update_footer(shared: &Shared) {
         .list
         .selected_row()
         .and_then(|r| st.rows.get(r.index() as usize));
+    let key = |k: &str, label: &str| format!("<b>{k}</b>  {}", glib::markup_escape_text(label));
     let hints: Vec<String> = match item {
-        Some(item) if item.kind == Kind::Provider => vec!["⏎ / Tab  entra nella modalità".into()],
+        Some(item) if item.kind == Kind::Provider => vec![key("Invio", "Entra nella modalità")],
         Some(item) => item_actions(&st, item)
             .iter()
             .take(9)
@@ -683,15 +750,15 @@ fn update_footer(shared: &Shared) {
             .map(|(i, a)| {
                 let label = providers::action_label(a);
                 if i == 0 {
-                    format!("⏎ {label}")
+                    key("Invio", &label)
                 } else {
-                    format!("Alt+{} {label}", i + 1)
+                    key(&format!("Alt+{}", i + 1), &label)
                 }
             })
             .collect(),
         None => Vec::new(),
     };
-    w.footer.set_text(&hints.join("   "));
+    w.footer.set_markup(&hints.join("      "));
     w.footer.set_visible(!hints.is_empty());
 }
 
@@ -707,6 +774,11 @@ fn on_key(shared: &Shared, key: gdk::Key, mods: gdk::ModifierType) -> glib::Prop
 
     match key {
         gdk::Key::Escape => shared.w.window.close(),
+        gdk::Key::BackSpace
+            if shared.w.entry.text().is_empty() && shared.state.borrow().active_mode.is_some() =>
+        {
+            exit_mode(shared)
+        }
         gdk::Key::Tab if selected_kind(shared) == Some(Kind::Provider) => {
             activate_selected(shared, 0)
         }
@@ -748,7 +820,7 @@ fn activate(shared: &Shared, index: usize, action_index: usize) {
 
     if item.kind == Kind::Provider {
         drop(st);
-        return enter_mode(shared, &item.identifier);
+        return enter_mode(shared, &item.identifier, "");
     }
 
     let actions = item_actions(&st, &item);
@@ -768,7 +840,7 @@ fn activate(shared: &Shared, index: usize, action_index: usize) {
     {
         let sub = format!("menus:{sub}");
         drop(st);
-        return enter_mode(shared, &sub);
+        return enter_mode(shared, &sub, "");
     }
 
     let query = st.mode_query.clone();

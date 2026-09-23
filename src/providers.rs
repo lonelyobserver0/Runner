@@ -128,8 +128,10 @@ pub fn order_actions(actions: &[String], preferred: &[String]) -> Vec<String> {
 pub enum Mode<'a> {
     /// Ricerca normale sui provider di default.
     Default { query: &'a str },
-    /// Un solo provider, scelto con un prefisso del config o con `/nome`.
+    /// Un solo provider: prefisso del config (resta nel testo) o modalità attiva.
     Single { provider: String, query: &'a str },
+    /// `/nome` completo: si entra nella modalità e nel testo resta solo la query.
+    Enter { provider: String, query: &'a str },
     /// `/filtro`: elenco dei provider installati.
     ProviderList { filter: &'a str },
 }
@@ -137,22 +139,34 @@ pub enum Mode<'a> {
 impl Mode<'_> {
     pub fn provider(&self) -> Option<&str> {
         match self {
-            Mode::Single { provider, .. } => Some(provider),
+            Mode::Single { provider, .. } | Mode::Enter { provider, .. } => Some(provider),
             _ => None,
         }
     }
 }
 
-/// `/bluetooth` o `/bluetooth testo` → modalità bluetooth; `/blu` → elenco
-/// provider filtrato. Il nome deve coincidere esattamente con un provider
-/// installato: così `/b` mostra l'elenco invece di saltare al primo che combacia.
-pub fn parse_mode<'a>(text: &'a str, config: &Config, installed: &[String]) -> Mode<'a> {
+/// `/bluetooth` o `/bluetooth testo` → si entra nella modalità bluetooth;
+/// `/blu` → elenco provider filtrato. Il nome deve coincidere esattamente con un
+/// provider installato: così `/b` mostra l'elenco invece di saltare al primo
+/// che combacia. Con una modalità già attiva il testo è tutto query.
+pub fn parse_mode<'a>(
+    text: &'a str,
+    active: Option<&str>,
+    config: &Config,
+    installed: &[String],
+) -> Mode<'a> {
+    if let Some(provider) = active {
+        return Mode::Single {
+            provider: provider.to_owned(),
+            query: text,
+        };
+    }
     if !config.provider_prefix.is_empty()
         && let Some(rest) = text.strip_prefix(config.provider_prefix.as_str())
     {
         let (name, query) = rest.split_once(' ').unwrap_or((rest, ""));
         if installed.iter().any(|p| p == name) {
-            return Mode::Single {
+            return Mode::Enter {
                 provider: name.to_owned(),
                 query,
             };
@@ -177,41 +191,33 @@ mod tests {
         ]
     }
 
+    fn enter<'a>(provider: &str, query: &'a str) -> Mode<'a> {
+        Mode::Enter {
+            provider: provider.into(),
+            query,
+        }
+    }
+
     #[test]
     fn slash_mode() {
         let c = Config::default();
         let p = installed();
-        assert_eq!(parse_mode("/", &c, &p), Mode::ProviderList { filter: "" });
+        let parse = |t| parse_mode(t, None, &c, &p);
+        assert_eq!(parse("/"), Mode::ProviderList { filter: "" });
+        assert_eq!(parse("/blue"), Mode::ProviderList { filter: "blue" });
+        assert_eq!(parse("/bluetooth"), enter("bluetooth", ""));
+        assert_eq!(parse("/bluetooth cuf"), enter("bluetooth", "cuf"));
+        assert_eq!(parse("/menus:power "), enter("menus:power", ""));
+        assert_eq!(parse("/nope x"), Mode::ProviderList { filter: "nope x" });
+        assert_eq!(parse("fire"), Mode::Default { query: "fire" });
+        // Dentro una modalità anche "/" è testo normale.
         assert_eq!(
-            parse_mode("/blue", &c, &p),
-            Mode::ProviderList { filter: "blue" }
-        );
-        assert_eq!(
-            parse_mode("/bluetooth", &c, &p),
+            parse_mode("/x", Some("bluetooth"), &c, &p),
             Mode::Single {
                 provider: "bluetooth".into(),
-                query: ""
+                query: "/x"
             }
         );
-        assert_eq!(
-            parse_mode("/bluetooth cuf", &c, &p),
-            Mode::Single {
-                provider: "bluetooth".into(),
-                query: "cuf"
-            }
-        );
-        assert_eq!(
-            parse_mode("/menus:power ", &c, &p),
-            Mode::Single {
-                provider: "menus:power".into(),
-                query: ""
-            }
-        );
-        assert_eq!(
-            parse_mode("/nope x", &c, &p),
-            Mode::ProviderList { filter: "nope x" }
-        );
-        assert_eq!(parse_mode("fire", &c, &p), Mode::Default { query: "fire" });
     }
 
     #[test]
@@ -219,7 +225,7 @@ mod tests {
         let mut c = Config::default();
         c.prefixes.insert("=".into(), "calc".into());
         assert_eq!(
-            parse_mode("=2+2", &c, &[]),
+            parse_mode("=2+2", None, &c, &[]),
             Mode::Single {
                 provider: "calc".into(),
                 query: "2+2"

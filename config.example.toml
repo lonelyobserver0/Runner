@@ -4,8 +4,8 @@
 providers = ["desktopapplications"]
 
 max_results = 50
-width = 640
-margin_top = 200
+width = 680
+margin_top = 180
 icon_size = 32
 close_on_focus_loss = true
 

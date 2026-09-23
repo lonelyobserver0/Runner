@@ -1,6 +1,7 @@
 mod config;
 mod elephant;
 mod providers;
+mod theme;
 mod ui;
 
 use gtk::prelude::*;

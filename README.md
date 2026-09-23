@@ -33,7 +33,7 @@ Ogni provider di elephant installato è una modalità:
 |---|---|
 | `/` | Elenco dei provider installati (`elephant listproviders`); `Invio`/`Tab` entra |
 | `/blu` | Elenco filtrato |
-| `/bluetooth` · `/bluetooth cuffie` | Solo quel provider, con la query dopo lo spazio |
+| `/bluetooth` · `/bluetooth cuffie` | Entra nella modalità: il prompt diventa `bluetooth ❯` e nella barra resta solo la query |
 | `/menus:<nome>` | Un menu di elephant; i sottomenu si aprono con `Invio` |
 | prefisso del config (es. `=2+2`) | Scorciatoia verso un provider |
 
@@ -56,14 +56,27 @@ bind = SUPER, SPACE, exec, runner
 | `↑` `↓` · `Tab` · `Ctrl+J/K` · `Ctrl+N/P` | Muove la selezione |
 | `Invio` / click | Azione principale dell'elemento (es. Avvia, Connetti) |
 | `Alt+2`…`Alt+9` | Altre azioni, elencate nel footer |
+| `Backspace` a barra vuota | Esce dalla modalità |
 | `Esc` | Chiude |
 
 ## Configurazione
 
 - `~/.config/runner/config.toml`: vedi [`config.example.toml`](config.example.toml)
 - `~/.config/runner/style.css`: caricato sopra lo stile di default
-  ([`src/style.css`](src/style.css)); per cambiare tema basta ridefinire i colori
-  `@define-color runner_*`.
+  ([`src/style.css`](src/style.css)).
+
+### Aspetto
+
+Runner prende l'aspetto dal desktop invece di averne uno suo:
+
+- **Colori da pywal** (`~/.cache/wal/colors.json`): `background`, `foreground` e
+  `color4` come accento, lo stesso del tema GTK. Superfici e linee sono miscele
+  di sfondo e testo (`mix()`), quindi funzionano con qualsiasi wallpaper.
+  Senza pywal usa una palette di riserva.
+- **Bordo da Hyprland:** stesso gradiente di `general:col.active_border`, angoli
+  vivi. Il launcher sembra una finestra col focus.
+- Per cambiare i colori basta ridefinire `runner_bg`, `runner_fg` e
+  `runner_accent` con `@define-color` nello `style.css` utente.
 
 ## Note
 
