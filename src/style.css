@@ -1,0 +1,108 @@
+/* Stile di default. Sovrascrivibile da ~/.config/runner/style.css
+   (basta ridefinire i colori qui sotto con @define-color). */
+
+@define-color runner_bg #1e1e2e;
+@define-color runner_fg #cdd6f4;
+@define-color runner_dim #9399b2;
+@define-color runner_entry_bg #313244;
+@define-color runner_border #45475a;
+@define-color runner_accent #89b4fa;
+@define-color runner_selected_bg alpha(#89b4fa, 0.18);
+
+window.runner {
+  background: transparent;
+}
+
+window.runner > box {
+  background: alpha(@runner_bg, 0.97);
+  color: @runner_fg;
+  border: 1px solid @runner_border;
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.runner-header {
+  margin-bottom: 8px;
+}
+
+/* Chip della modalità corrente (es. "Bluetooth") a sinistra della entry. */
+.runner-mode {
+  background: alpha(@runner_accent, 0.18);
+  color: @runner_accent;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-weight: 600;
+}
+
+.runner-spinner {
+  color: @runner_accent;
+  min-width: 18px;
+}
+
+.runner-entry {
+  background: @runner_entry_bg;
+  color: @runner_fg;
+  caret-color: @runner_accent;
+  font-size: 1.3em;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  box-shadow: none;
+  outline: none;
+}
+
+.runner-entry:focus-within {
+  border-color: @runner_accent;
+}
+
+.runner-list {
+  background: transparent;
+  color: @runner_fg;
+}
+
+.runner-list row.item {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+}
+
+.runner-list row.item:hover {
+  background: alpha(@runner_fg, 0.05);
+}
+
+.runner-list row.item:selected {
+  background: @runner_selected_bg;
+  border-left-color: @runner_accent;
+  color: @runner_fg;
+}
+
+.item-badge {
+  font-size: 0.75em;
+  color: @runner_accent;
+  border: 1px solid alpha(@runner_accent, 0.5);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+.item-subtext {
+  font-size: 0.85em;
+  color: @runner_dim;
+}
+
+.runner-footer {
+  font-size: 0.8em;
+  color: @runner_dim;
+  margin-top: 8px;
+  padding: 0 6px;
+}
+
+.runner scrollbar {
+  background: transparent;
+  border: none;
+}
+
+.runner scrollbar slider {
+  min-width: 4px;
+  background: alpha(@runner_fg, 0.2);
+}

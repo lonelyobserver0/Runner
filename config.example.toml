@@ -1,0 +1,29 @@
+# Copia in ~/.config/runner/config.toml
+
+# Provider interrogati di default (vedi `elephant listproviders`).
+providers = ["desktopapplications"]
+
+max_results = 50
+width = 640
+margin_top = 200
+icon_size = 32
+close_on_focus_loss = true
+
+# Prefisso per scegliere un provider per nome: "/bluetooth". "" lo disattiva.
+provider_prefix = "/"
+
+# Azioni da preferire per Invio, in ordine di priorità. Le distruttive
+# (remove, erase_history, delete…) finiscono comunque in fondo.
+primary_actions = ["start", "connect", "disconnect", "pair", "menus:open", "menus:default", "activate", "open", "copy"]
+
+# Provider dopo le cui azioni il launcher resta aperto e ricarica.
+keep_open = ["bluetooth", "wireplumber", "playerctl", "todo"]
+
+# Prefisso → provider. Il prefisso viene tolto dalla query.
+# Vince il prefisso più lungo. Servono i relativi provider installati
+# (es. `elephant-calc`, `elephant-files`, `elephant-runner`).
+[prefixes]
+# "=" = "calc"
+# "/" = "files"
+# ">" = "runner"
+# "b:" = "bluetooth"
