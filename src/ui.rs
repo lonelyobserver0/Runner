@@ -490,7 +490,7 @@ fn send_query(st: &mut State, providers: Option<&[String]>, only: Option<String>
 /// Voci dell'elenco `/`, filtrate per nome tecnico o leggibile.
 fn provider_list(installed: &[String], filter: &str) -> Vec<Item> {
     let filter = filter.trim().to_lowercase();
-    installed
+    let mut items: Vec<Item> = installed
         .iter()
         // `providerlist` è un altro elenco di provider: qui sarebbe un doppione.
         .filter(|p| *p != "providerlist")
@@ -509,7 +509,11 @@ fn provider_list(installed: &[String], filter: &str) -> Vec<Item> {
                 ..Default::default()
             })
         })
-        .collect()
+        .collect();
+    // `elephant listproviders` non ha un ordine fisso: si ordina per il nome
+    // mostrato, così l'elenco resta uguale da un avvio all'altro.
+    items.sort_by_cached_key(|it| it.text.to_lowercase());
+    items
 }
 
 fn handle_event(shared: &Shared, event: Event) {
